@@ -1,6 +1,3 @@
-.\" Martin Tournoij <martin@arp242.net>
-.\" Free for any use. There are no restrictions
-.\"
 .Dd September 28th, 2011
 .Dt pkg_sanity 8
 .Os
@@ -9,7 +6,7 @@
 .Nd "Basic package/port related sanity checks"
 .Sh SYNOPSIS
 .Nm
-.Fl o | l | u
+.Fl o | l | u | v
 .Sh DESCRIPTION
 .Nm
 Performs some basic sanity checks.
@@ -19,9 +16,13 @@ Options:
 .It Fl o
 Check for binaries which belong to a different FreeBSD version.
 .It Fl l
-Check for binaries or libraries with broken links
+Check for binaries or libraries with references to non-existing libraries.
 .It Fl u
-Check for unowned files
+List files in LOCALBASE that aren't installed by a package.
+Be *very* careful removing files, some files are not directly listed in a
+package, but *are* required (eg. cache files).
+.It Fl v
+Verbose output
 .El
 .Sh ENVIRONMENT
 .Ev PKG_DBDIR
@@ -30,7 +31,7 @@ Check for unowned files
 .Xr pkg_info 1
 .Sh AUTHORS
 .An Martin Tournoij <martin@arp242.net>
-
-https://bitbucket.org/Carpetsmoker/pkg_sanity
-
+.Pp
+http://code.arp242.net/pkg_sanity
+.Pp
 MIT License applies, http://opensource.org/licenses/MIT

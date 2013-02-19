@@ -1,77 +1,98 @@
 #!/bin/sh
 #
-# Copyright © 2011-2012 Martin Tournoij <martin@arp242.net>
+# Copyright © 2011-2013 Martin Tournoij <martin@arp242.net>
+# Version: 20130219
 # See below for full copyright
 #
-# https://code.arp242.net/pkg_sanity
+# http://code.arp242.net/pkg_sanity
 #
 
-usage()
+_usage()
 {
 	echo "Usage: ${0##*/} -o | -l | -u"
 	echo ""
 	echo "    -o    Check for binaries/libraries belonging to different FreeBSD versions"
-	echo "          than what we're currently running"
+	echo "          than what we’re currently running"
 	echo "    -l    Check for unresolvable shared libraries"
 	echo "    -u    Check for files that don't seem to belong to any package in ${localbase}"
 	echo ""
+	echo "    -v    Verbose output"
+	echo ""
 }
 
-binaries()
+_binaries()
 {
+	local version bindirs dir f
+
+	[ ! -z ${verbose} ] && echo "===> Checking for old binaries"
+
 	version=$(uname -r | head -c 1)
 	bindirs="bin sbin"
 
-	echo "===> Checking for old binaries"
-	for d in ${bindirs}; do
-		echo "${localbase}/${d}"
+	for dir in ${bindirs}; do
+		[ ! -z ${verbose} ] && echo "${localbase}/${dir}"
 
-		for f in ${localbase}/${d}/*; do
+		for f in ${localbase}/${dir}/*; do
 			file "$f" | grep 'ELF' | grep -v "FreeBSD $version"
+			[ $? -eq 0 ] && error=yes
 		done
 	done
 }
 
-libraries()
+_libraries()
 {
+	local libdirs dir f check pkgname
+	
+	[ ! -z ${verbose} ] && echo "===> Checking for unresolvable libraries"
+
 	libdirs="/bin /sbin /libexec /lib /usr/bin /usr/sbin /usr/lib /usr/libexec \
 	${localbase}/bin ${localbase}/sbin ${localbase}/lib ${localbase}/libexec"
 
-	echo "===> Checking for unresolvable libraries"
-	
-	for d in ${libdirs}; do
-		echo "Checking ${d}"
-		for f in $(find ${d} -type f); do
-			# TODO: Linux binaries are executed
+	for dir in ${libdirs}; do
+		[ ! -z ${verbose} ] && echo "Checking ${dir}"
+		for f in $(find ${dir} -type f); do
+			# LD_TRACE_LOADED_OBJECTS is needed to Linux binaries
 			# http://www.freebsd.org/cgi/query-pr.cgi?pr=bin/127276
-			check=$(ldd "${f}" 2>&1 | grep -v "not a dynamic" | grep "found")
+			check=$(LD_TRACE_LOADED_OBJECTS=y ldd "${f}" 2>&1 | grep -v "not a dynamic" | grep "found")
 			if [ $? -eq 0 ]; then
-                pkgname=$(pkg_info -W ${f} | cut -d' ' -f6)
-                echo "Found a problem in ${f} (Part of ${pkgname})"
+				pkgname=$(pkg_info -W ${f} | cut -d' ' -f6)
+				echo "Found a problem in ${f} (Part of ${pkgname})"
 				echo "${check}"
 			fi
 		done
 	done
 }
 
-unowned()
+_unowned()
 {
-	# Get list a files that should be installed
+	local pkgfiles_tmpfile files_tmpfile pkgnum filenum missing unknown \
+		nummissing numunknown
+
+	[ ! -z ${verbose} ] && echo "===> Checking for unowned files"
+
 	pkgfiles_tmpfile=$(mktemp -t pkg_sanity)
+	files_tmpfile=$(mktemp -t pkg_sanity)
+
+	trap "rm ${pkgfiles_tmpfile} ${files_tmpfile}; exit 1" INT
+
+	# Get list a files that should be installed
 	cat ${pkgdb}/*/+CONTENTS | grep -Ev '(^@|^\+)' | sort -u > "${pkgfiles_tmpfile}"
 	pkgnum=$(wc -l "${pkgfiles_tmpfile}" | cut -d' ' -f 4)
 
 	# Get a list of everything in /usr/local/
-	files_tmpfile=$(mktemp -t pkg_sanity)
 	find ${localbase} -type f -or -type l | sed "s|^${localbase}/||;" \
 		| sort -u > ${files_tmpfile}
 	filenum=$(wc -l "${files_tmpfile}" | cut -d' ' -f 4)
 
 	# Let's diff!
-	mising=$(diff -u00 ${pkgfiles_tmpfile} ${files_tmpfile} \
+	missing=$(diff -u00 ${pkgfiles_tmpfile} ${files_tmpfile} \
 		| grep '^[-][^+-]' | sed "s|^-|${localbase}/|")
 	unknown=$(diff -u00 ${pkgfiles_tmpfile} ${files_tmpfile} \
 		| grep '^[+][^+-]' | sed "s|^\+|${localbase}/|")
+
+	# Ignore Python & Perl cache files
+	unknown=$(echo "${unknown}" | grep -Ev '(\.pyc|\.pyo|\.ph)$')
+
 	nummissing=$(echo "${missing}" | wc -l | cut -d' ' -f 4)
 	numunknown=$(echo "${unknown}" | wc -l | cut -d' ' -f 4)
 
@@ -79,12 +100,20 @@ unowned()
 	#echo "===> Files in pkgdb:       ${pkgnum}"
 	#echo "===> Files in filesystem:  ${filenum}"
 	#echo "===> Difference:          " $((${filenum} - ${pkgnum}))
-	echo "===> Files that should be installed but are not: ${nummissing}"
-	echo "${missing}"
-	echo "===> Unknown files in ${localbase}: ${numunknown}"
-	echo "${unknown}" | grep -v "${localbase}/etc/"
 
-	rm "${files_tmpfile}" "${pkgfiles_tmpfile}"
+	# TODO: Also print package
+	if [ "${nummissing}" != "0" ] || [ ! -z ${verbose} ]; then
+		echo "===> Files that should be installed but are not: ${nummissing}"
+		echo "${missing}"
+		echo ""
+	fi
+
+	if [ "${numunknown}" != "0" ] || [ ! -z ${verbose} ]; then
+		echo "===> Unknown files in ${localbase}: ${numunknown}"
+		echo "${unknown}" | grep -v "${localbase}/etc/"
+	fi
+
+	rm ${files_tmpfile} ${pkgfiles_tmpfile}
 }
 
 pkgdb=${PKGDB:=/var/db/pkg}
@@ -93,30 +122,29 @@ localbase=${LOCALBASE:=/usr/local}
 # Make sure localbase doesn't have a trailing slash
 localbase=$(echo "${localbase}" | sed -e 's|//|/|g; s|/$||;')
 
-while getopts "holu" arg; do
+while getopts "holuvx:" arg; do
 	case "${arg}" in
-		h)	usage; exit 0 ;;
-		o)	binaries=yes ;;
-		l)	libraries=yes ;;
-		u)	unowned=yes ;;
-		*)	usage; exit 1 ;;
+		h) _usage; exit 0 ;;
+		o) binaries=yes ;;
+		l) libraries=yes ;;
+		u) unowned=yes ;;
+		v) verbose=yes ;;
+		*) _usage; exit 1 ;;
 	esac
 done
 
-if [ -n "${binaries}" ]; then
-	binaries
-fi
-
-if [ -n "${libraries}" ]; then
-	libraries
-fi
-
-if [ -n "${unowned}" ]; then
-	unowned
-fi
-
 if [ $# -eq 0 ]; then
-	usage
+	_usage
+	exit 1
+fi
+
+[ -n "${binaries}" ] && _binaries
+[ -n "${libraries}" ] && _libraries
+[ -n "${unowned}" ] && _unowned
+
+if [ -z ${error} ]; then
+	exit 0
+else
 	exit 1
 fi
 
