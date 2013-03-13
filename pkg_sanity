@@ -1,9 +1,9 @@
 #!/bin/sh
 #
 # Copyright © 2011-2013 Martin Tournoij <martin@arp242.net>
-# Version: 20130219
 # See below for full copyright
 #
+# Version: 20130313
 # http://code.arp242.net/pkg_sanity
 #
 
@@ -11,11 +11,17 @@ _usage()
 {
 	echo "Usage: ${0##*/} -o | -l | -u"
 	echo ""
+	echo " Commands:"
 	echo "    -o    Check for binaries/libraries belonging to different FreeBSD versions"
 	echo "          than what we’re currently running"
 	echo "    -l    Check for unresolvable shared libraries"
 	echo "    -u    Check for files that don't seem to belong to any package in ${localbase}"
+	echo "          Be *very* careful removing files, some files are not directly listed in a"
+	echo "          package, but *are* required (eg. cache files)."
+	echo "          It's also increasingly common to install {ruby,nodejs,..} packages directly"
+	echo "          with the provided packaging tools (eg. gem, npm, easy_install)"
 	echo ""
+	echo " Options:"
 	echo "    -v    Verbose output"
 	echo ""
 }
@@ -33,7 +39,7 @@ _binaries()
 		[ ! -z ${verbose} ] && echo "${localbase}/${dir}"
 
 		for f in ${localbase}/${dir}/*; do
-			file "$f" | grep 'ELF' | grep -v "FreeBSD $version"
+			file "${f}" | grep 'ELF' | grep -v "FreeBSD ${version}"
 			[ $? -eq 0 ] && error=yes
 		done
 	done
@@ -51,7 +57,7 @@ _libraries()
 	for dir in ${libdirs}; do
 		[ ! -z ${verbose} ] && echo "Checking ${dir}"
 		for f in $(find ${dir} -type f); do
-			# LD_TRACE_LOADED_OBJECTS is needed to Linux binaries
+			# LD_TRACE_LOADED_OBJECTS is needed for Linux binaries
 			# http://www.freebsd.org/cgi/query-pr.cgi?pr=bin/127276
 			check=$(LD_TRACE_LOADED_OBJECTS=y ldd "${f}" 2>&1 | grep -v "not a dynamic" | grep "found")
 			if [ $? -eq 0 ]; then
@@ -122,18 +128,19 @@ localbase=${LOCALBASE:=/usr/local}
 # Make sure localbase doesn't have a trailing slash
 localbase=$(echo "${localbase}" | sed -e 's|//|/|g; s|/$||;')
 
-while getopts "holuvx:" arg; do
+c=0
+while getopts "holuv" arg; do
 	case "${arg}" in
 		h) _usage; exit 0 ;;
-		o) binaries=yes ;;
-		l) libraries=yes ;;
-		u) unowned=yes ;;
+		o) binaries=yes; c=1 ;;
+		l) libraries=yes; c=1 ;;
+		u) unowned=yes; c=1 ;;
 		v) verbose=yes ;;
 		*) _usage; exit 1 ;;
 	esac
 done
 
-if [ $# -eq 0 ]; then
+if [ ${c} -eq 0 ]; then
 	_usage
 	exit 1
 fi
@@ -151,7 +158,7 @@ fi
 
 # The MIT License (MIT) 
 # 
-# Copyright © 2011-2012 Martin Tournoij
+# Copyright © 2011-2013 Martin Tournoij
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the “Software”), to
@@ -163,10 +170,10 @@ fi
 # The above copyright notice and this permission notice shall be included in
 # all copies or substantial portions of the Software.
 # 
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-# IN THE SOFTWARE.
+# The software is provided "as is", without warranty of any kind, express or
+# implied, including but not limited to the warranties of merchantability,
+# fitness for a particular purpose and noninfringement. In no event shall the
+# authors or copyright holders be liable for any claim, damages or other
+# liability, whether in an action of contract, tort or otherwise, arising
+# from, out of or in connection with the software or the use or other dealings
+# in the software.
