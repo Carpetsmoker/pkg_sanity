@@ -32,7 +32,7 @@ _binaries()
 
 	[ ! -z ${verbose} ] && echo "===> Checking for old binaries"
 
-	version=$(uname -r | head -c 1)
+	version=$(uname -r | cut -d'.' -f1)
 	bindirs="bin sbin"
 
 	for dir in ${bindirs}; do
@@ -61,7 +61,11 @@ _libraries()
 			# http://www.freebsd.org/cgi/query-pr.cgi?pr=bin/127276
 			check=$(LD_TRACE_LOADED_OBJECTS=y ldd "${f}" 2>&1 | grep -v "not a dynamic" | grep "found")
 			if [ $? -eq 0 ]; then
-				pkgname=$(pkg_info -W ${f} | cut -d' ' -f6)
+				if [ ${pkgng} -eq 1 ]; then
+					pkgname=$(pkg which "${f}" | cut -d' ' -f6)
+				else
+					pkgname=$(pkg_info -W "${f}" | cut -d' ' -f6)
+				fi
 				echo "Found a problem in ${f} (Part of ${pkgname})"
 				echo "${check}"
 			fi
@@ -82,7 +86,11 @@ _unowned()
 	trap "rm ${pkgfiles_tmpfile} ${files_tmpfile}; exit 1" INT
 
 	# Get list a files that should be installed
-	cat ${pkgdb}/*/+CONTENTS | grep -Ev '(^@|^\+)' | sort -u > "${pkgfiles_tmpfile}"
+	if [ ${pkgng} -eq 1 ]; then
+		pkg info -la | grep '^/' | sort -u > "${pkgfiles_tmpfile}"
+	else
+		grep -Ev '(^@|^\+)' | ${pkgdb}/*/+CONTENTS | sort -u > "${pkgfiles_tmpfile}"
+	fi
 	pkgnum=$(wc -l "${pkgfiles_tmpfile}" | cut -d' ' -f 4)
 
 	# Get a list of everything in /usr/local/
@@ -122,8 +130,10 @@ _unowned()
 	rm ${files_tmpfile} ${pkgfiles_tmpfile}
 }
 
-pkgdb=${PKGDB:=/var/db/pkg}
 localbase=${LOCALBASE:=/usr/local}
+pkgdb=${PKGDB:=/var/db/pkg}
+[ -f ${pkgdb}/local.sqlite ] && [ "X$(make -V WITH_PKGNG)" != "X" ]
+pkgng=$?
 
 # Make sure localbase doesn't have a trailing slash
 localbase=$(echo "${localbase}" | sed -e 's|//|/|g; s|/$||;')
