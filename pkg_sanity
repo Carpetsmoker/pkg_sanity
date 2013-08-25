@@ -132,7 +132,7 @@ _unowned()
 
 localbase=${LOCALBASE:=/usr/local}
 pkgdb=${PKGDB:=/var/db/pkg}
-[ -f ${pkgdb}/local.sqlite ] && [ "X$(make -V WITH_PKGNG)" != "X" ]
+[ ! -f ${pkgdb}/local.sqlite ] && [ "X$(make -V WITH_PKGNG)" != "X" ]
 pkgng=$?
 
 # Make sure localbase doesn't have a trailing slash
